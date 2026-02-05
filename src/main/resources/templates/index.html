@@ -1,0 +1,125 @@
+<!DOCTYPE html>
+<html lang="ja" xmlns:th="http://www.thymeleaf.org">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>住宅ローンシミュレーター</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: sans-serif; margin: 24px; background: #f6f7fb; color: #1f2937; }
+        .layout { display: grid; grid-template-columns: 360px 1fr; gap: 24px; align-items: start; }
+        .panel { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 3px 12px rgba(0,0,0,.08); }
+        .form-row { margin-bottom: 12px; }
+        label { display: block; font-weight: 600; margin-bottom: 4px; }
+        input { width: 100%; box-sizing: border-box; padding: 8px; border: 1px solid #d1d5db; border-radius: 8px; }
+        button { width: 100%; padding: 10px; background: #2563eb; border: none; color: #fff; border-radius: 8px; font-weight: 700; cursor: pointer; }
+        .summary { display: flex; gap: 12px; margin-top: 12px; }
+        .summary-item { flex: 1; background: #eff6ff; padding: 10px; border-radius: 8px; }
+        table { width: 100%; border-collapse: collapse; margin-top: 18px; background: #fff; }
+        th, td { border: 1px solid #e5e7eb; padding: 8px; text-align: right; font-size: 13px; }
+        th { background: #f3f4f6; }
+        td:first-child, th:first-child { text-align: center; }
+        .error { color: #b91c1c; font-size: 12px; margin-top: 4px; }
+        .chart-wrap { height: 430px; }
+    </style>
+</head>
+<body>
+<h1>住宅ローンシミュレーター</h1>
+<div class="layout">
+    <div class="panel">
+        <form th:action="@{/simulate}" th:object="${request}" method="post">
+            <div class="form-row">
+                <label>現金初期値</label>
+                <input type="number" step="1000" th:field="*{initialCash}">
+                <div class="error" th:if="${#fields.hasErrors('initialCash')}" th:errors="*{initialCash}"></div>
+            </div>
+            <div class="form-row">
+                <label>住宅ローン残高初期値</label>
+                <input type="number" step="1000" th:field="*{initialLoan}">
+                <div class="error" th:if="${#fields.hasErrors('initialLoan')}" th:errors="*{initialLoan}"></div>
+            </div>
+            <div class="form-row">
+                <label>年間貯金増加</label>
+                <input type="number" step="1000" th:field="*{annualSavingsIncrease}">
+                <div class="error" th:if="${#fields.hasErrors('annualSavingsIncrease')}" th:errors="*{annualSavingsIncrease}"></div>
+            </div>
+            <div class="form-row">
+                <label>ローン金利 (例 0.005)</label>
+                <input type="number" step="0.0001" th:field="*{loanInterestRate}">
+            </div>
+            <div class="form-row">
+                <label>投資利回り (例 0.03)</label>
+                <input type="number" step="0.0001" th:field="*{investmentYieldAnnual}">
+            </div>
+            <div class="form-row">
+                <label>毎月のローン返済額</label>
+                <input type="number" step="1000" th:field="*{monthlyLoanPayment}">
+                <div class="error" th:if="${#fields.hasErrors('monthlyLoanPayment')}" th:errors="*{monthlyLoanPayment}"></div>
+            </div>
+            <div class="form-row">
+                <label>シミュレーション年数</label>
+                <input type="number" th:field="*{years}">
+                <div class="error" th:if="${#fields.hasErrors('years')}" th:errors="*{years}"></div>
+            </div>
+            <button type="submit">シミュレーション実行</button>
+        </form>
+    </div>
+
+    <div>
+        <div class="panel">
+            <div class="chart-wrap"><canvas id="resultChart"></canvas></div>
+            <div class="summary" th:if="${result != null}">
+                <div class="summary-item">最終現金<br><strong th:text="${#numbers.formatInteger(result.finalCash,1,'COMMA')}"></strong></div>
+                <div class="summary-item">最終ローン残高<br><strong th:text="${#numbers.formatInteger(result.finalLoan,1,'COMMA')}"></strong></div>
+                <div class="summary-item">最終純資産<br><strong th:text="${#numbers.formatInteger(result.finalNetWorth,1,'COMMA')}"></strong></div>
+            </div>
+        </div>
+
+        <table th:if="${result != null}">
+            <thead>
+            <tr>
+                <th>月</th>
+                <th>現金</th>
+                <th>ローン残高</th>
+                <th>純資産</th>
+            </tr>
+            </thead>
+            <tbody>
+            <tr th:each="r : ${result.records}">
+                <td th:text="${r.month}"></td>
+                <td th:text="${#numbers.formatInteger(r.cash,1,'COMMA')}"></td>
+                <td th:text="${#numbers.formatInteger(r.loan,1,'COMMA')}"></td>
+                <td th:text="${#numbers.formatInteger(r.netWorth,1,'COMMA')}"></td>
+            </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script th:inline="javascript">
+    const records = /*[[${result != null ? result.records : null}]]*/ [];
+    const labels = records ? records.map(r => r.month) : [];
+    const cash = records ? records.map(r => r.cash) : [];
+    const loan = records ? records.map(r => r.loan) : [];
+    const netWorth = records ? records.map(r => r.netWorth) : [];
+
+    new Chart(document.getElementById('resultChart'), {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [
+                { label: '現金', data: cash, borderColor: '#2563eb', fill: false, tension: 0.2 },
+                { label: 'ローン残高', data: loan, borderColor: '#dc2626', fill: false, tension: 0.2 },
+                { label: '純資産', data: netWorth, borderColor: '#16a34a', fill: false, tension: 0.2 }
+            ]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: { legend: { position: 'bottom' } }
+        }
+    });
+</script>
+</body>
+</html>
